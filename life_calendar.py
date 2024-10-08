@@ -10,7 +10,7 @@
 import argparse
 import datetime
 import math
-import os
+from pathlib import Path
 
 import cairo
 
@@ -24,18 +24,18 @@ NUM_COLUMNS = 52  # always 52 columns
 AZERO_HEIGHT = 2 ** (1 / 4)  # ≈ 1.189m
 AZERO_WIDTH = 1 / AZERO_HEIGHT  # ≈ 0.8409m
 MM_PER_PT = 0.3528
-# A1 standard international paper size
+# A4 standard international paper size
 A_SIZE = 4
 DOC_HEIGHT = AZERO_HEIGHT / (2 ** (1 / 2)) ** A_SIZE * 1000 / MM_PER_PT  # ≈ 841mm / 2383pt
 DOC_WIDTH = DOC_HEIGHT / 2 ** (1 / 2)  # ≈ 594mm / 1683pt
 
-DOC_NAME = "life_calendar2.pdf"
+DOC_NAME = "life_calendar.pdf"
 
 DEFAULT_TITLE = "LIFE CALENDAR"
 
-FONT = "Baskerville"
-BIGFONT_SIZE = DOC_HEIGHT / 60  # ≈ 40pt at A1 size
-SMALLFONT_SIZE = DOC_HEIGHT / 150  # ≈ 16pt at A1 size
+FONT = "EB Garamond SC"
+BIGFONT_SIZE = DOC_HEIGHT / 30  # ≈ 80pt at A1 size
+SMALLFONT_SIZE = DOC_HEIGHT / 120  # ≈ 20pt at A1 size
 TINYFONT_SIZE = DOC_HEIGHT / 200  # ≈ 12pt at A1 size
 
 TOP_MARGIN = DOC_HEIGHT * 0.10
@@ -66,87 +66,110 @@ SIDE_MARGIN = (DOC_WIDTH - (BOX_BOUNDS * GRID_BOUNDS_X_RATIO)) / 2
 
 CORNER_RADIUS = CORNER_RADIUS_RATIO * BOX_BOUNDS
 BOX_LINE_WIDTH = BOX_LINE_WIDTH_RATIO * BOX_BOUNDS
-HEAVY_BOX_LINE_WIDTH = 1.5 * BOX_LINE_WIDTH
+HEAVY_BOX_LINE_WIDTH = 2 * BOX_LINE_WIDTH
 GAP_SIZE = GAP_SIZE_RATIO * BOX_BOUNDS
 
-DARKENED_COLOR_DELTA = (-0.7, -0.7, -0.7)
+BLACK = (0.2, 0.2, 0.2)
+WHITE = (1.0, 1.0, 1.0)
+LIGHT_GRAY = (0.7, 0.7, 0.7)
+DARK_GRAY = (0.5, 0.5, 0.5)
+DARKENED_COLOR_DELTA = (-0.8, -0.8, -0.8)
+LIGHTEN = (1.6, 1.6, 1.6)
+
+SPECIAL_DATES = ["2017-06-24", "2019-06-19", "2022-03-01", "2023-11-10", "2025-08-06"]
 
 
-def parse_date(date):
+def parse_date(datestr: str) -> datetime.date:
     formats = ["%Y/%m/%d", "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"]
 
     for f in formats:
         try:
-            ret = datetime.datetime.strptime(date.strip(), f)
+            parsed: datetime.datetime = datetime.datetime.strptime(datestr.strip(), f)
         except ValueError:
             continue
         else:
-            return ret
+            return parsed.date()
 
-    raise ValueError("Incorrect date format: must be dd-mm-yyyy or dd/mm/yyyy")
+    raise ValueError("Incorrect date format: must be DMY or YMD with / or -")
 
 
-def format_date(date) -> str:
+def format_date(date: datetime.date) -> str:
     numerals = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
-    return f"{date.day} {numerals[date.month - 1]} {date.year}"
+    return f"{date.strftime("%d")} {numerals[date.month - 1].lower()} {date.strftime("%Y")}"
 
 
-def text_size(ctx, text):
-    _, _, width, height, _, _ = ctx.text_extents(text)
-    return width, height
-
-
-def is_current_week(now, month, day):
+def is_current_week(now: datetime.date, *, day: int, month: int, year: int | None = None) -> bool:
     end = now + datetime.timedelta(weeks=1)
-    ret = []
+    years: list[int] = [now.year, now.year + 1] if year is None else [year]
 
-    for year in [now.year, now.year + 1]:
+    for year in years:
         try:
-            date = datetime.datetime(year, month, day)
+            date: datetime.date = datetime.date(year, month, day)
         except ValueError:
-            if (month == 2) and (day == 29):
+            if (month == 2) and (day == 29):  # noqa: PLR2004
                 # Handle edge case for birthday being on leap year day
-                date = datetime.datetime(year, month, day - 1)
+                date = datetime.date(year, month, day - 1)
             else:
                 raise
+        if now <= date < end:
+            return True
 
-        ret.append(now <= date < end)
-
-    return True in ret
-
-
-def parse_darken_until_date(date):
-    if date == "today":
-        today = datetime.date.today()
-        return datetime.datetime(today.year, today.month, today.day)
-    return parse_date(date)
+    return False
 
 
-def get_darkened_fill(fill):
-    return tuple(map(sum, zip(fill, DARKENED_COLOR_DELTA, strict=False)))
+def is_special_week(now, dates: list[str]):
+    dates = [parse_date(date) for date in dates]
+    return any(
+        is_current_week(now, day=date.day, month=date.month, year=date.year) for date in dates
+    )
 
 
-def count_1000k_week(date, *, birthdate) -> int:
-    days_now = (date - birthdate).days
-    days_last_week = (date - datetime.timedelta(weeks=1) - birthdate).days
+def count_1000k_week(date: datetime.date, *, birthdate: datetime.date) -> int:
+    days_now: int = (date - birthdate).days
+    days_last_week: int = (date - datetime.timedelta(weeks=1) - birthdate).days
     if days_last_week // 7000 < days_now // 7000:
         return days_now // 7000
     return 0
 
 
-def count_gigasec_week(date, *, birthdate) -> int:
-    total_seconds_now = (date - birthdate).total_seconds()
-    total_seconds_last_week = (date - datetime.timedelta(weeks=1) - birthdate).total_seconds()
+def count_gigasec_week(date: datetime.date, *, birthdate: datetime.date) -> int:
+    total_seconds_now: float = (date - birthdate).total_seconds()
+    total_seconds_last_week: float = (
+        date - datetime.timedelta(weeks=1) - birthdate
+    ).total_seconds()
 
     if total_seconds_last_week // 1_000_000_000 < total_seconds_now // 1_000_000_000:
         return int(total_seconds_now // 1_000_000_000)
     return 0
 
 
-def draw_square(ctx, pos_x, pos_y, box_size, fillcolor=(1, 1, 1), linewidth=BOX_LINE_WIDTH) -> None:
+def parse_darken_until_date(datestr: str) -> datetime.date:
+    if datestr == "today":
+        today = datetime.date.today()
+        return datetime.date(today.year, today.month, today.day)
+    return parse_date(datestr)
+
+
+def get_darkened_fill(fill: tuple[float, float, float]) -> tuple[float, float, float]:
+    return tuple(map(sum, zip(fill, DARKENED_COLOR_DELTA, strict=False)))
+
+
+def text_size(ctx: cairo.Context, text: str) -> tuple[float, float]:
+    _, _, width, height, _, _ = ctx.text_extents(text)
+    return width, height
+
+
+def draw_square(
+    ctx: cairo.Context,
+    pos_x: float,
+    pos_y: float,
+    box_size: float,
+    fillcolor: tuple[float, float, float] = WHITE,
+    linewidth: float = BOX_LINE_WIDTH,
+) -> None:
     """Draws rectangles with rounded (circular arc) corners."""
     ctx.set_line_width(linewidth)
-    ctx.set_source_rgb(0, 0, 0)
+    ctx.set_source_rgb(*BLACK)
     ctx.move_to(pos_x, pos_y)
 
     x_1, x_2 = pos_x, pos_x + box_size
@@ -160,11 +183,10 @@ def draw_square(ctx, pos_x, pos_y, box_size, fillcolor=(1, 1, 1), linewidth=BOX_
         (x_1 + CORNER_RADIUS, y_2 - CORNER_RADIUS, 1, 2),  # Bottom-left
     ]
 
+    # Draw the square
     ctx.new_sub_path()
-
     for cx, cy, start, end in corners:
         ctx.arc(cx, cy, CORNER_RADIUS, start * (math.pi / 2), end * (math.pi / 2))
-
     ctx.close_path()
     ctx.stroke_preserve()
 
@@ -173,46 +195,47 @@ def draw_square(ctx, pos_x, pos_y, box_size, fillcolor=(1, 1, 1), linewidth=BOX_
     ctx.fill()
 
 
-def draw_row(ctx, pos_y, birthdate, date, box_size, darken_until_date):
+def draw_row(ctx: cairo.Context, pos_y, birthdate, date, box_size, darken_until_date):
     """Draws a row of 52 or 53 squares, starting at pos_y."""
     pos_x = SIDE_MARGIN
     week = 0
     row_tags = []
 
+    # Write the start date of the row
     ctx.set_font_size(TINYFONT_SIZE)
     ctx.select_font_face(FONT, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
-    # write the date
-    ctx.set_source_rgb(0.5, 0.5, 0.5)
+    ctx.set_source_rgb(*DARK_GRAY)
     date_str = format_date(date)
     w, h = text_size(ctx, date_str)
-    # Draw it in front of the current row
     ctx.move_to(pos_x - w - BOX_SIZE, pos_y + ((BOX_SIZE / 2) + (h / 2)))
     ctx.show_text(date_str)
 
-    # loop until reaching the next birthday week
-    while week == 0 or not is_current_week(date, birthdate.month, birthdate.day):
-        fill = (1, 1, 1)
+    # Loop until reaching the next birthday week
+    while week == 0 or not is_current_week(date, day=birthdate.day, month=birthdate.month):
+        fill = WHITE
         width = BOX_LINE_WIDTH
 
+        if is_special_week(date, dates=SPECIAL_DATES):
+            fill = LIGHTEN
         if count_1000k_week(date, birthdate=birthdate):
             row_tags.append(f"{count_1000k_week(date, birthdate=birthdate)}k")
             width = HEAVY_BOX_LINE_WIDTH
-
         if count_gigasec_week(date, birthdate=birthdate):
             row_tags.append(f"{count_gigasec_week(date, birthdate=birthdate)}Gs")
             width = HEAVY_BOX_LINE_WIDTH
         if darken_until_date and date < darken_until_date:
             fill = get_darkened_fill(fill)
 
-        draw_square(ctx, pos_x, pos_y, box_size, fillcolor=fill, linewidth=width)
-        pos_x += box_size + BOX_MARGIN
+        draw_square(ctx, pos_x, pos_y, BOX_SIZE, fillcolor=fill, linewidth=width)
+        pos_x += BOX_SIZE + BOX_MARGIN
         if week % GAP_X_INTERVAL == GAP_X_INTERVAL - 1:
             pos_x += GAP_SIZE
         week += 1
         date += datetime.timedelta(weeks=1)
 
+    # Add special tags to the row (xk weeks, xGs)
     for tag in row_tags:
-        ctx.set_source_rgb(0.5, 0.5, 0.5)
+        ctx.set_source_rgb(*DARK_GRAY)
         w, h = text_size(ctx, tag)
         ctx.move_to(pos_x, pos_y + ((BOX_SIZE + h) / 2))
         pos_x += w + GAP_SIZE
@@ -221,14 +244,14 @@ def draw_row(ctx, pos_y, birthdate, date, box_size, darken_until_date):
     return date
 
 
-def draw_grid(ctx, birthdate, age, darken_until_date) -> None:
+def draw_grid(ctx: cairo.Context, birthdate, age, darken_until_date) -> None:
     """Draws the whole grid of 52x90 squares."""
     num_rows = age
     pos_x = SIDE_MARGIN
     pos_y = TOP_MARGIN
 
-    # draw week numbers above top row
-    ctx.set_source_rgb(0.5, 0.5, 0.5)
+    # Draw week numbers above top row
+    ctx.set_source_rgb(*DARK_GRAY)
     ctx.set_font_size(TINYFONT_SIZE)
     ctx.select_font_face(FONT, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
 
@@ -245,9 +268,6 @@ def draw_grid(ctx, birthdate, age, darken_until_date) -> None:
             pos_x += GAP_SIZE
         pos_x += BOX_SIZE + BOX_MARGIN
 
-    ctx.set_font_size(TINYFONT_SIZE)
-    ctx.select_font_face(FONT, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
-
     date = birthdate
 
     for i in range(num_rows):
@@ -263,28 +283,29 @@ def gen_calendar(birthdate, title, age, filename, darken_until_date, subtitle_te
         raise ValueError(f"Invalid age, must be between {MIN_AGE} and {MAX_AGE}")
 
     # Fill background with white
-    surface = cairo.PDFSurface(filename, DOC_WIDTH, DOC_HEIGHT)
-    ctx = cairo.Context(surface)
-
-    ctx.set_source_rgb(1, 1, 1)
+    surface: cairo.PDFSurface = cairo.PDFSurface(filename, DOC_WIDTH, DOC_HEIGHT)
+    ctx: cairo.Context = cairo.Context(surface)
+    ctx.set_source_rgb(*WHITE)
     ctx.rectangle(0, 0, DOC_WIDTH, DOC_HEIGHT)
     ctx.fill()
 
+    # Draw title
     ctx.select_font_face(FONT, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
-    ctx.set_source_rgb(0, 0, 0)
+    ctx.set_source_rgb(*BLACK)
     ctx.set_font_size(BIGFONT_SIZE)
-    w, h = text_size(ctx, title)
-    ctx.move_to((DOC_WIDTH / 2) - (w / 2), (TOP_MARGIN / 2) - (h / 2))
+    w_title, h_title = text_size(ctx, title)
+    ctx.move_to((DOC_WIDTH / 2) - (w_title / 2), TOP_MARGIN / 2)
     ctx.show_text(title)
 
+    # Draw subtitle
     if subtitle_text is not None:
-        ctx.set_source_rgb(0.7, 0.7, 0.7)
+        ctx.set_source_rgb(*LIGHT_GRAY)
         ctx.set_font_size(SMALLFONT_SIZE)
         w, h = text_size(ctx, subtitle_text)
-        ctx.move_to((DOC_WIDTH / 2) - (w / 2), (TOP_MARGIN / 2) - (h / 2) + 15)
+        ctx.move_to((DOC_WIDTH / 2) - (w / 2), (TOP_MARGIN / 2) + h_title - (h / 2))
         ctx.show_text(subtitle_text)
 
-    # Draw 52x90 grid of squares
+    # Draw grid
     draw_grid(ctx, birthdate, age, darken_until_date)
 
     ctx.show_page()
@@ -347,7 +368,7 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-    doc_name = f"{os.path.splitext(args.filename)[0]}.pdf"
+    doc_name = f"{Path(args.filename).stem}.pdf"
 
     try:
         gen_calendar(
