@@ -86,7 +86,7 @@ def parse_date(date):
     raise ValueError("Incorrect date format: must be dd-mm-yyyy or dd/mm/yyyy")
 
 
-def format_date(date):
+def format_date(date) -> str:
     numerals = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
     return f"{date.day} {numerals[date.month - 1]} {date.year}"
 
@@ -143,7 +143,7 @@ def count_gigasec_week(date, *, birthdate) -> int:
     return 0
 
 
-def draw_square(ctx, pos_x, pos_y, box_size, fillcolor=(1, 1, 1), linewidth=BOX_LINE_WIDTH):
+def draw_square(ctx, pos_x, pos_y, box_size, fillcolor=(1, 1, 1), linewidth=BOX_LINE_WIDTH) -> None:
     """Draws rectangles with rounded (circular arc) corners."""
     ctx.set_line_width(linewidth)
     ctx.set_source_rgb(0, 0, 0)
@@ -221,7 +221,7 @@ def draw_row(ctx, pos_y, birthdate, date, box_size, darken_until_date):
     return date
 
 
-def draw_grid(ctx, birthdate, age, darken_until_date):
+def draw_grid(ctx, birthdate, age, darken_until_date) -> None:
     """Draws the whole grid of 52x90 squares."""
     num_rows = age
     pos_x = SIDE_MARGIN
@@ -257,10 +257,10 @@ def draw_grid(ctx, birthdate, age, darken_until_date):
             pos_y += GAP_SIZE
 
 
-def gen_calendar(birthdate, title, age, filename, darken_until_date, subtitle_text=None):
+def gen_calendar(birthdate, title, age, filename, darken_until_date, subtitle_text=None) -> None:
     age = int(age)
     if (age < MIN_AGE) or (age > MAX_AGE):
-        raise ValueError("Invalid age, must be between %d and %d" % (MIN_AGE, MAX_AGE))
+        raise ValueError(f"Invalid age, must be between {MIN_AGE} and {MAX_AGE}")
 
     # Fill background with white
     surface = cairo.PDFSurface(filename, DOC_WIDTH, DOC_HEIGHT)
@@ -290,7 +290,7 @@ def gen_calendar(birthdate, title, age, filename, darken_until_date, subtitle_te
     ctx.show_page()
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description='\nGenerate a personalized "Life  Calendar", inspired by'
         " the calendar with the same name from the waitbutwhy.com store"
@@ -312,7 +312,7 @@ def main():
         "--title",
         type=str,
         dest="title",
-        help='Calendar title text (default is "%s")' % DEFAULT_TITLE,
+        help=f'Calendar title text (default is "{DEFAULT_TITLE}")',
         default=DEFAULT_TITLE,
     )
 
@@ -331,7 +331,7 @@ def main():
         type=int,
         dest="age",
         choices=range(MIN_AGE, MAX_AGE + 1),
-        metavar="[%s-%s]" % (MIN_AGE, MAX_AGE),
+        metavar=f"[{MIN_AGE}-{MAX_AGE}]",
         help="Number of rows to generate, representing years of life",
         default=100,
     )
@@ -347,7 +347,7 @@ def main():
     )
 
     args = parser.parse_args()
-    doc_name = "%s.pdf" % (os.path.splitext(args.filename)[0])
+    doc_name = f"{os.path.splitext(args.filename)[0]}.pdf"
 
     try:
         gen_calendar(
@@ -359,10 +359,10 @@ def main():
             subtitle_text=args.subtitle_text,
         )
     except Exception as e:
-        print("Error: %s" % e)
+        print(f"Error: {e}")
         raise
 
-    print("Created %s" % doc_name)
+    print(f"Created {doc_name}")
 
 
 if __name__ == "__main__":
