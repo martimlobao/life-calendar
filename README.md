@@ -24,6 +24,12 @@ If you don't already have [`uv`](https://docs.astral.sh/uv/getting-started/insta
 Run the script directly with `uv` by pointing to the raw GitHub URL:
 
 ```bash
+uv run https://raw.githubusercontent.com/martimlobao/life-calendar/main/life_calendar.py 1990-08-06
+```
+
+Or with more arguments:
+
+```bash
 uv run https://raw.githubusercontent.com/martimlobao/life-calendar/main/life_calendar.py 1990-08-06 -d -a 100 -b "Martim Lobao" -x 2010-05-15,2015-09-10,2020-12-31,2024-07-04
 ```
 
@@ -55,15 +61,14 @@ uv run https://raw.githubusercontent.com/martimlobao/life-calendar/main/life_cal
 
 ## FAQ
 
-**Why are there some rows with 53 cells?**  
+**Why are there some rows with 53 cells?**
 Those rows contain the inserted extra week that keeps the first cell aligned with your birthday. The additional cell compensates for the fact that years are slightly longer than exactly 52 weeks.
 
-**What are the dates on the left of the grid?**  
+**What are the dates on the left of the grid?**
 They mark the calendar date for the weekday you were born on, pegged to the occurrence on or before your birthday each year. For example, if you arrived on a Wednesday, each label shows the Wednesday that lands on or just before your birthday, kicking off that year's birthday week.
 
-**What is the weekday at the top-left of the grid?**  
+**What is the weekday at the top-left of the grid?**
 It shows the weekday you were born on. Fill in each new week on that weekday to stay synchronized with your birthday.
 
-**What are the cells with thicker borders and the numbers/letters on the right side?**  
+**What are the cells with thicker borders and the numbers/letters on the right side?**
 Thicker borders highlight milestone weeks (1k, 2k, 3k, …) and milestone gigaseconds (1Gs, 2Gs, …). The labels on the right correspond to those milestones.
-
