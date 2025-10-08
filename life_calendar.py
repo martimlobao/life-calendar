@@ -25,7 +25,6 @@ REMOTE_REPO_RAW_BASE = "https://raw.githubusercontent.com/martimlobao/life-calen
 FONT_BASE_URL_ENV_VAR = "LIFE_CALENDAR_FONT_BASE_URL"
 FONT_FILENAMES: tuple[str, ...] = (
     "EBGaramondSC08-Regular.otf",
-    "EBGaramondSC12-Regular.otf",
 )
 
 
