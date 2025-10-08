@@ -12,6 +12,7 @@ import datetime
 import math
 import os
 import tempfile
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -31,8 +32,14 @@ FONT_FILENAMES: tuple[str, ...] = (
 def _download_font(destination: Path, filename: str) -> None:
     base_url = os.environ.get(FONT_BASE_URL_ENV_VAR, REMOTE_REPO_RAW_BASE)
     url = f"{base_url.rstrip('/')}/font/{filename}"
+
+    # Validate URL scheme to prevent file:// or other unsafe schemes
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Unsafe URL scheme '{parsed.scheme}'. Only http and https are allowed.")
+
     try:
-        with urllib.request.urlopen(url) as response, destination.open("wb") as file_obj:
+        with urllib.request.urlopen(url) as response, destination.open("wb") as file_obj:  # noqa: S310
             file_obj.write(response.read())
     except OSError as exc:  # Includes URLError and filesystem issues
         raise RuntimeError(f"Unable to download font '{filename}' from {url}") from exc
@@ -70,16 +77,12 @@ def _configure_fontconfig(font_dir: Path) -> None:
 
     fonts_conf_lines = ["<fontconfig>"]
     for include_path in includes:
-        fonts_conf_lines.append(
-            f"  <include ignore_missing=\"yes\">{include_path}</include>"
-        )
-    fonts_conf_lines.extend(
-        (
-            f"  <dir>{font_dir}</dir>",
-            f"  <cachedir>{cache_dir}</cachedir>",
-            "</fontconfig>",
-        )
-    )
+        fonts_conf_lines.append(f'  <include ignore_missing="yes">{include_path}</include>')
+    fonts_conf_lines.extend((
+        f"  <dir>{font_dir}</dir>",
+        f"  <cachedir>{cache_dir}</cachedir>",
+        "</fontconfig>",
+    ))
     fonts_conf_path.write_text("\n".join(fonts_conf_lines), encoding="utf-8")
     os.environ["FONTCONFIG_FILE"] = str(fonts_conf_path)
 
@@ -124,7 +127,7 @@ def _read_font_family_name(font_path: Path) -> str | None:
     string_storage_offset = int.from_bytes(name_table[4:6], "big")
 
     def _decode_name(raw: bytes, platform_id: int) -> str | None:
-        if platform_id in (0, 3):
+        if platform_id in {0, 3}:
             try:
                 return raw.decode("utf-16-be")
             except UnicodeDecodeError:
@@ -163,7 +166,7 @@ def _read_font_family_name(font_path: Path) -> str | None:
             continue
 
         priority = 3
-        if platform_id == 3 and encoding_id in (1, 10):
+        if platform_id == 3 and encoding_id in {1, 10}:
             priority = 0
         elif platform_id == 0:
             priority = 1
@@ -173,7 +176,7 @@ def _read_font_family_name(font_path: Path) -> str | None:
         if (best_match is None) or (priority < best_match[0]):
             best_match = (priority, decoded)
         elif (best_match is not None) and (priority == best_match[0]):
-            if language_id == 0x409 and best_match[1] != decoded:
+            if language_id == 0x409:
                 best_match = (priority, decoded)
 
     if best_match:
@@ -616,8 +619,7 @@ def main() -> None:
         choices=range(LifeCalendar.MIN_AGE, LifeCalendar.MAX_AGE + 1),
         metavar=f"[{LifeCalendar.MIN_AGE}-{LifeCalendar.MAX_AGE}]",
         help=(
-            "Number of rows to generate, representing years of life (default is"
-            f" {DEFAULT_AGE})"
+            f"Number of rows to generate, representing years of life (default is {DEFAULT_AGE})"
         ),
         default=DEFAULT_AGE,
     )
