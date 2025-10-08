@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#     "cairocffi",
+#     "pycairo",
 # ]
 # ///
 
@@ -16,16 +16,16 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-try:
-    import cairo
-except ModuleNotFoundError:  # pragma: no cover - fallback when pycairo isn't available
-    import cairocffi as cairo  # type: ignore[no-redef]
+import cairo
+
+DEFAULT_TITLE: str = "LIFE CALENDAR"
+DEFAULT_FILENAME: str = "life_calendar.pdf"
+DEFAULT_AGE: int = 100
+DEFAULT_A_SIZE: int = 2
 
 REMOTE_REPO_RAW_BASE = "https://raw.githubusercontent.com/martimlobao/life-calendar/main"
 FONT_BASE_URL_ENV_VAR = "LIFE_CALENDAR_FONT_BASE_URL"
-FONT_FILENAMES: tuple[str, ...] = (
-    "EBGaramondSC08-Regular.otf",
-)
+FONT_FILENAMES: tuple[str, ...] = ("EBGaramondSC08-Regular.otf",)
 
 
 def _download_font(destination: Path, filename: str) -> None:
@@ -200,10 +200,6 @@ def _discover_font_families(font_dir: Path) -> list[str]:
 FONT_DIRECTORY: Path = _ensure_font_directory()
 _configure_fontconfig(FONT_DIRECTORY)
 FONT_FAMILIES: list[str] = _discover_font_families(FONT_DIRECTORY)
-DEFAULT_TITLE: str = "LIFE CALENDAR"
-DEFAULT_FILENAME: str = "life_calendar.pdf"
-DEFAULT_AGE: int = 100
-DEFAULT_A_SIZE: int = 2
 
 
 class LifeCalendar:
