@@ -439,8 +439,23 @@ def main() -> None:
         default=None,
     )
 
-    args = parser.parse_args()
-    filename = f"{Path(args.filename).stem}.pdf"
+    args: argparse.Namespace = parser.parse_args()
+
+    # Handle filename extension
+    file_path = Path(args.filename)
+    if file_path.suffix:
+        # User specified an extension
+        if file_path.suffix.lower() != ".pdf":
+            print(
+                f"Warning: Replacing '{file_path.suffix}' extension with '.pdf'"
+                " (cairo only supports PDF output)"
+            )
+            filename: str = f"{file_path.stem}.pdf"
+        else:
+            filename: str = args.filename
+    else:
+        # No extension specified, add .pdf
+        filename: str = f"{args.filename}.pdf"
 
     try:
         LifeCalendar(
