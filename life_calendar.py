@@ -73,10 +73,13 @@ def _configure_fontconfig(font_dir: Path) -> None:
         fonts_conf_lines.append(
             f"  <include ignore_missing=\"yes\">{include_path}</include>"
         )
-    fonts_conf_lines.append(f"  <dir>{font_dir}</dir>")
-    fonts_conf_lines.append(f"  <cachedir>{cache_dir}</cachedir>")
-    fonts_conf_lines.append("</fontconfig>")
-
+    fonts_conf_lines.extend(
+        (
+            f"  <dir>{font_dir}</dir>",
+            f"  <cachedir>{cache_dir}</cachedir>",
+            "</fontconfig>",
+        )
+    )
     fonts_conf_path.write_text("\n".join(fonts_conf_lines), encoding="utf-8")
     os.environ["FONTCONFIG_FILE"] = str(fonts_conf_path)
 
