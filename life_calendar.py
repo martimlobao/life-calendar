@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#     "pycairo",
+#     "cairocffi",
 # ]
 # ///
 
@@ -10,11 +10,196 @@
 import argparse
 import datetime
 import math
+import os
+import tempfile
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
-import cairo
+try:
+    import cairo
+except ModuleNotFoundError:  # pragma: no cover - fallback when pycairo isn't available
+    import cairocffi as cairo  # type: ignore[no-redef]
 
-DEFAULT_FONT: str = "EB Garamond SC"
+REMOTE_REPO_RAW_BASE = "https://raw.githubusercontent.com/martimlobao/life-calendar/main"
+FONT_BASE_URL_ENV_VAR = "LIFE_CALENDAR_FONT_BASE_URL"
+FONT_FILENAMES: tuple[str, ...] = (
+    "EBGaramondSC08-Regular.otf",
+)
+
+
+def _download_font(destination: Path, filename: str) -> None:
+    base_url = os.environ.get(FONT_BASE_URL_ENV_VAR, REMOTE_REPO_RAW_BASE)
+    url = f"{base_url.rstrip('/')}/font/{filename}"
+
+    # Validate URL scheme to prevent file:// or other unsafe schemes
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Unsafe URL scheme '{parsed.scheme}'. Only http and https are allowed.")
+
+    try:
+        with urllib.request.urlopen(url) as response, destination.open("wb") as file_obj:  # noqa: S310
+            file_obj.write(response.read())
+    except OSError as exc:  # Includes URLError and filesystem issues
+        raise RuntimeError(f"Unable to download font '{filename}' from {url}") from exc
+
+
+def _ensure_font_directory() -> Path:
+    script_dir = Path(__file__).resolve().parent
+    local_font_dir = script_dir / "font"
+    if local_font_dir.is_dir() and all(
+        (local_font_dir / font_name).is_file() for font_name in FONT_FILENAMES
+    ):
+        return local_font_dir
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="life_calendar_fonts_"))
+    for font_name in FONT_FILENAMES:
+        font_path = tmp_dir / font_name
+        if not font_path.is_file():
+            _download_font(font_path, font_name)
+    return tmp_dir
+
+
+def _configure_fontconfig(font_dir: Path) -> None:
+    previous_config = os.environ.get("FONTCONFIG_FILE")
+    cache_dir = font_dir / ".cache"
+    cache_dir.mkdir(exist_ok=True)
+    config_dir = font_dir / ".fontconfig"
+    config_dir.mkdir(exist_ok=True)
+    fonts_conf_path = config_dir / "fonts.conf"
+
+    includes: list[str] = []
+    if previous_config:
+        includes.append(previous_config)
+    else:
+        includes.append("/etc/fonts/fonts.conf")
+
+    fonts_conf_lines = ["<fontconfig>"]
+    for include_path in includes:
+        fonts_conf_lines.append(f'  <include ignore_missing="yes">{include_path}</include>')
+    fonts_conf_lines.extend((
+        f"  <dir>{font_dir}</dir>",
+        f"  <cachedir>{cache_dir}</cachedir>",
+        "</fontconfig>",
+    ))
+    fonts_conf_path.write_text("\n".join(fonts_conf_lines), encoding="utf-8")
+    os.environ["FONTCONFIG_FILE"] = str(fonts_conf_path)
+
+
+def _read_font_family_name(font_path: Path) -> str | None:
+    with font_path.open("rb") as font_file:
+        data = font_file.read()
+
+    if len(data) < 12:
+        return None
+
+    num_tables = int.from_bytes(data[4:6], "big", signed=False)
+    record_offset = 12
+
+    name_table_offset = None
+    name_table_length = None
+
+    for _ in range(num_tables):
+        if record_offset + 16 > len(data):
+            return None
+        tag = data[record_offset : record_offset + 4]
+        offset = int.from_bytes(data[record_offset + 8 : record_offset + 12], "big")
+        length = int.from_bytes(data[record_offset + 12 : record_offset + 16], "big")
+        if tag == b"name":
+            name_table_offset = offset
+            name_table_length = length
+            break
+        record_offset += 16
+
+    if (name_table_offset is None) or (name_table_length is None):
+        return None
+
+    end_offset = name_table_offset + name_table_length
+    if end_offset > len(data):
+        return None
+
+    name_table = data[name_table_offset:end_offset]
+    if len(name_table) < 6:
+        return None
+
+    count = int.from_bytes(name_table[2:4], "big")
+    string_storage_offset = int.from_bytes(name_table[4:6], "big")
+
+    def _decode_name(raw: bytes, platform_id: int) -> str | None:
+        if platform_id in {0, 3}:
+            try:
+                return raw.decode("utf-16-be")
+            except UnicodeDecodeError:
+                return None
+        if platform_id == 1:
+            try:
+                return raw.decode("mac_roman")
+            except UnicodeDecodeError:
+                return None
+        return None
+
+    best_match: tuple[int, str] | None = None
+    for index in range(count):
+        start = 6 + index * 12
+        end = start + 12
+        if end > len(name_table):
+            break
+        platform_id = int.from_bytes(name_table[start : start + 2], "big")
+        encoding_id = int.from_bytes(name_table[start + 2 : start + 4], "big")
+        language_id = int.from_bytes(name_table[start + 4 : start + 6], "big")
+        name_id = int.from_bytes(name_table[start + 6 : start + 8], "big")
+        length = int.from_bytes(name_table[start + 8 : start + 10], "big")
+        offset = int.from_bytes(name_table[start + 10 : start + 12], "big")
+
+        if name_id != 1:
+            continue
+
+        string_start = string_storage_offset + offset
+        string_end = string_start + length
+        if string_end > len(name_table):
+            continue
+
+        raw_bytes = name_table[string_start:string_end]
+        decoded = _decode_name(raw_bytes, platform_id)
+        if not decoded:
+            continue
+
+        priority = 3
+        if platform_id == 3 and encoding_id in {1, 10}:
+            priority = 0
+        elif platform_id == 0:
+            priority = 1
+        elif platform_id == 3:
+            priority = 2
+
+        if (best_match is None) or (priority < best_match[0]):
+            best_match = (priority, decoded)
+        elif (best_match is not None) and (priority == best_match[0]):
+            if language_id == 0x409:
+                best_match = (priority, decoded)
+
+    if best_match:
+        return best_match[1]
+    return None
+
+
+def _discover_font_families(font_dir: Path) -> list[str]:
+    families: list[str] = []
+    seen: set[str] = set()
+    for font_filename in FONT_FILENAMES:
+        font_path = font_dir / font_filename
+        if not font_path.is_file():
+            continue
+        family = _read_font_family_name(font_path)
+        if family and family not in seen:
+            families.append(family)
+            seen.add(family)
+    return families
+
+
+FONT_DIRECTORY: Path = _ensure_font_directory()
+_configure_fontconfig(FONT_DIRECTORY)
+FONT_FAMILIES: list[str] = _discover_font_families(FONT_DIRECTORY)
 DEFAULT_TITLE: str = "LIFE CALENDAR"
 DEFAULT_FILENAME: str = "life_calendar.pdf"
 DEFAULT_AGE: int = 100
@@ -40,6 +225,7 @@ class LifeCalendar:
         subtitle_text: str | None = None,
         filename: str | None = None,
         a_size: int | None = None,
+        font_family: str | None = None,
     ) -> None:
         if isinstance(birthdate, str):
             birthdate = self.parse_date(birthdate)
@@ -72,7 +258,10 @@ class LifeCalendar:
         self.CTX: cairo.Context = cairo.Context(self.SURFACE)
 
         # Constants for layout (can be adjusted manually)
-        self.FONT: str = DEFAULT_FONT  # from https://github.com/georgd/EB-Garamond
+        resolved_font_family = font_family or (FONT_FAMILIES[0] if FONT_FAMILIES else None)
+        if resolved_font_family is None:
+            raise RuntimeError("No font families available. Unable to continue.")
+        self.FONT: str = resolved_font_family
         self.BIGFONT_SIZE: float = self.DOC_HEIGHT / 30  # ≈ 80pt at A1 size
         self.SMALLFONT_SIZE: float = self.DOC_HEIGHT / 120  # ≈ 20pt at A1 size
         self.TINYFONT_SIZE: float = self.DOC_HEIGHT / 200  # ≈ 12pt at A1 size
@@ -406,6 +595,21 @@ def main() -> None:
         default=None,
     )
 
+    font_help = "Font family to use for rendering text."
+    if FONT_FAMILIES:
+        font_help += " Available bundled options: " + ", ".join(FONT_FAMILIES)
+
+    font_arg_kwargs: dict[str, object] = {
+        "type": str,
+        "dest": "font_family",
+        "default": None,
+        "help": font_help,
+    }
+    if FONT_FAMILIES:
+        font_arg_kwargs["choices"] = FONT_FAMILIES
+
+    parser.add_argument("--font-family", **font_arg_kwargs)
+
     parser.add_argument(
         "-a",
         "--age",
@@ -414,8 +618,7 @@ def main() -> None:
         choices=range(LifeCalendar.MIN_AGE, LifeCalendar.MAX_AGE + 1),
         metavar=f"[{LifeCalendar.MIN_AGE}-{LifeCalendar.MAX_AGE}]",
         help=(
-            "Number of rows to generate, representing years of life (default is"
-            f" {DEFAULT_AGE})"
+            f"Number of rows to generate, representing years of life (default is {DEFAULT_AGE})"
         ),
         default=DEFAULT_AGE,
     )
@@ -467,6 +670,7 @@ def main() -> None:
             subtitle_text=args.subtitle_text,
             filename=filename,
             a_size=args.a_size,
+            font_family=args.font_family,
         ).gen_calendar()
 
     except Exception as e:

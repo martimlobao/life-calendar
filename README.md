@@ -39,6 +39,13 @@ This command will generate a PDF highlighting the provided milestone dates for t
 * `-a/--age`: Number of rows to generate, representing years of life (defaults to `100`).
 * `-d/--darken-until`: Darken all weeks up to the supplied date (or up to today if no date is provided).
 * `-x/--highlight-dates`: Comma-separated list of additional dates (`YYYY-MM-DD`) to highlight.
+*  `--font-family`: Font family to use for rendered text.
+
+Fonts bundled with the project are used automatically when you run the script locally or when you execute it directly from GitHub, but you can override the font choice with `--font-family` when you prefer a specific family among the bundled fonts:
+
+```bash
+uv run life_calendar.py 1990-08-06 --font-family "EB Garamond SC"
+```
 
 To produce a blank printable calendar, omit the darkening flag:
 
