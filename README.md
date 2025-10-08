@@ -32,7 +32,7 @@ This command will generate a PDF highlighting the provided milestone dates for t
 * `-d/--darken-until`: Darken all weeks up to the supplied date (or up to today if no date is provided).
 * `-x/--highlight-dates`: Comma-separated list of additional dates (`YYYY-MM-DD`) to highlight.
 
-To produce a blank printable calendar, omit the highlight dates and darkening flag:
+To produce a blank printable calendar, omit the darkening flag:
 
 ```bash
 uv run https://raw.githubusercontent.com/martimlobao/life-calendar/main/life_calendar.py 1990-08-06 -a 100 -b "Martim Lobao"
