@@ -14,12 +14,14 @@ from pathlib import Path
 
 import cairo
 
+DEFAULT_FONT: str = "EB Garamond SC"
+DEFAULT_TITLE: str = "LIFE CALENDAR"
+DEFAULT_FILENAME: str = "life_calendar.pdf"
+DEFAULT_AGE: int = 100
+DEFAULT_A_SIZE: int = 2
+
 
 class LifeCalendar:
-    DEFAULT_TITLE: str = "LIFE CALENDAR"
-    DEFAULT_FILENAME: str = "life_calendar.pdf"
-    DEFAULT_AGE: int = 100
-    DEFAULT_A_SIZE: int = 2
     MIN_AGE: int = 80
     MAX_AGE: int = 150
     NUM_COLUMNS: int = 52
@@ -52,21 +54,25 @@ class LifeCalendar:
         if isinstance(highlight_dates, str):
             highlight_dates = self.parse_highlight_dates(highlight_dates)
         self.HIGHLIGHT_DATES: list[datetime.date] = highlight_dates or []
-        self.NUM_ROWS: int = age or self.DEFAULT_AGE
-        a_size = a_size or self.DEFAULT_A_SIZE
+        self.NUM_ROWS: int = age or DEFAULT_AGE
+        a_size = a_size or DEFAULT_A_SIZE
         # ≈ 841mm / 2383pt for A1 size
-        self.DOC_HEIGHT: float = self.AZERO_HEIGHT / (2 ** (1 / 2)) ** a_size * 1000 / self.MM_PER_PT
+        self.DOC_HEIGHT: float = (
+            self.AZERO_HEIGHT / (2 ** (1 / 2)) ** a_size * 1000 / self.MM_PER_PT
+        )
         # ≈ 594mm / 1683pt for A1 size
         self.DOC_WIDTH: float = self.DOC_HEIGHT / 2 ** (1 / 2)
-        self.TITLE: str = title or self.DEFAULT_TITLE
-        self.FILENAME: str = filename or self.DEFAULT_FILENAME
+        self.TITLE: str = title or DEFAULT_TITLE
+        self.FILENAME: str = filename or DEFAULT_FILENAME
         self.SUBTITLE_TEXT: str | None = subtitle_text
 
-        self.SURFACE: cairo.PDFSurface = cairo.PDFSurface(self.FILENAME, self.DOC_WIDTH, self.DOC_HEIGHT)
+        self.SURFACE: cairo.PDFSurface = cairo.PDFSurface(
+            self.FILENAME, self.DOC_WIDTH, self.DOC_HEIGHT
+        )
         self.CTX: cairo.Context = cairo.Context(self.SURFACE)
 
         # Constants for layout (can be adjusted manually)
-        self.FONT: str = "EB Garamond SC"  # from https://github.com/georgd/EB-Garamond
+        self.FONT: str = DEFAULT_FONT  # from https://github.com/georgd/EB-Garamond
         self.BIGFONT_SIZE: float = self.DOC_HEIGHT / 30  # ≈ 80pt at A1 size
         self.SMALLFONT_SIZE: float = self.DOC_HEIGHT / 120  # ≈ 20pt at A1 size
         self.TINYFONT_SIZE: float = self.DOC_HEIGHT / 200  # ≈ 12pt at A1 size
@@ -90,7 +96,9 @@ class LifeCalendar:
         grid_bounds_x_ratio = self.NUM_COLUMNS - box_margin_ratio + self.X_GAPS * gap_size_ratio
         grid_bounds_y_ratio = self.NUM_ROWS - box_margin_ratio + self.Y_GAPS * gap_size_ratio
         max_box_bounds_x = (self.DOC_WIDTH - 2 * min_side_margin) / grid_bounds_x_ratio
-        max_box_bounds_y = (self.DOC_HEIGHT - self.TOP_MARGIN - min_bottom_margin) / grid_bounds_y_ratio
+        max_box_bounds_y = (
+            self.DOC_HEIGHT - self.TOP_MARGIN - min_bottom_margin
+        ) / grid_bounds_y_ratio
         self.BOX_BOUNDS = min(max_box_bounds_x, max_box_bounds_y)
         self.BOX_MARGIN = box_margin_ratio * self.BOX_BOUNDS
         self.BOX_SIZE = self.BOX_BOUNDS - self.BOX_MARGIN
@@ -134,7 +142,7 @@ class LifeCalendar:
     @staticmethod
     def format_date(date: datetime.date) -> str:
         numerals = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
-        return f"{date.strftime("%d")} {numerals[date.month - 1].lower()} {date.strftime("%Y")}"
+        return f"{date.strftime('%d')} {numerals[date.month - 1].lower()} {date.strftime('%Y')}"
 
     @staticmethod
     def is_current_week(
@@ -163,7 +171,10 @@ class LifeCalendar:
 
     @classmethod
     def is_special_week(cls, now: datetime.date, dates: list[datetime.date]) -> bool:
-        return any(cls.is_current_week(now, day=date.day, month=date.month, year=date.year) for date in dates)
+        return any(
+            cls.is_current_week(now, day=date.day, month=date.month, year=date.year)
+            for date in dates
+        )
 
     def count_1000k_week(self, date: datetime.date) -> int:
         days_now: int = (date - self.BIRTHDATE).days
@@ -173,7 +184,9 @@ class LifeCalendar:
 
     def count_gigasec_week(self, date: datetime.date) -> int:
         seconds: float = (date - self.BIRTHDATE).total_seconds()
-        if (seconds - datetime.timedelta(weeks=1).total_seconds()) // 1_000_000_000 < seconds // 1_000_000_000:
+        if (
+            seconds - datetime.timedelta(weeks=1).total_seconds()
+        ) // 1_000_000_000 < seconds // 1_000_000_000:
             return int(seconds // 1_000_000_000)
         return 0
 
@@ -244,7 +257,9 @@ class LifeCalendar:
         self.CTX.show_text(date_str)
 
         # Loop until reaching the next birthday week
-        while week == 0 or not self.is_current_week(date, day=self.BIRTHDATE.day, month=self.BIRTHDATE.month):
+        while week == 0 or not self.is_current_week(
+            date, day=self.BIRTHDATE.day, month=self.BIRTHDATE.month
+        ):
             fill = self.WHITE
             width = self.BOX_LINE_WIDTH
 
@@ -357,8 +372,8 @@ def main() -> None:
         "--filename",
         type=str,
         dest="filename",
-        help="output filename",
-        default=LifeCalendar.DEFAULT_FILENAME,
+        help="Output filename (default is 'life_calendar.pdf')",
+        default=DEFAULT_FILENAME,
     )
 
     parser.add_argument(
@@ -366,8 +381,11 @@ def main() -> None:
         "--a-size",
         type=int,
         dest="a_size",
-        help="Output file size in ISO 216 A format (A0 is 0, A1 is 1, etc.)",
-        default=LifeCalendar.DEFAULT_A_SIZE,
+        help=(
+            "Output file size in ISO 216 A format (A0 is 0, A1 is 1, etc., default is"
+            f" A{DEFAULT_A_SIZE})"
+        ),
+        default=DEFAULT_A_SIZE,
     )
 
     parser.add_argument(
@@ -375,8 +393,8 @@ def main() -> None:
         "--title",
         type=str,
         dest="title",
-        help=f'Calendar title text (default is "{LifeCalendar.DEFAULT_TITLE}")',
-        default=LifeCalendar.DEFAULT_TITLE,
+        help=f'Calendar title text (default is "{DEFAULT_TITLE}")',
+        default=DEFAULT_TITLE,
     )
 
     parser.add_argument(
@@ -395,19 +413,21 @@ def main() -> None:
         dest="age",
         choices=range(LifeCalendar.MIN_AGE, LifeCalendar.MAX_AGE + 1),
         metavar=f"[{LifeCalendar.MIN_AGE}-{LifeCalendar.MAX_AGE}]",
-        help="Number of rows to generate, representing years of life",
-        default=100,
+        help=(
+            "Number of rows to generate, representing years of life (default is"
+            f" {DEFAULT_AGE})"
+        ),
+        default=DEFAULT_AGE,
     )
 
     parser.add_argument(
         "-d",
         "--darken-until",
         type=str,
-        # type=LifeCalendar.parse_darken_until_date,
         dest="darken_until_date",
         nargs="?",
         const="today",
-        help="Darken until date. (defaults to today if argument is not given)",
+        help="Darken until date (defaults to today if argument is not given)",
     )
 
     parser.add_argument(
@@ -421,7 +441,6 @@ def main() -> None:
 
     args = parser.parse_args()
     filename = f"{Path(args.filename).stem}.pdf"
-    # darken_until_date = args.darken_until_date
 
     try:
         LifeCalendar(
